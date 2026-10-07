@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+scenario_out*/
+checkpoints/
+wandb/
+data.csv
+results_*.csv
+pred_errors*.csv
+*.png
+.ipynb_checkpoints/

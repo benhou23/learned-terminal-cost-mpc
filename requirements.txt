@@ -1,0 +1,12 @@
+numpy
+numba
+torch
+gymnasium
+stable-baselines3
+eclipse-sumo
+traci
+sumolib
+pandas
+matplotlib
+# optional, only used for logging during training
+wandb
