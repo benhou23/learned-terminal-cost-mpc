@@ -1,8 +1,7 @@
 # Learned terminal costs for short-horizon MPC
 
-Code for our master's thesis at Volvo Group and Chalmers (2026), and for the
-paper *Learned Terminal Costs for Short-Horizon Model Predictive Control of
-Autonomous Trucks in Interactive Highway Traffic* (under review).
+Code for the paper *Learned Terminal Costs for Short-Horizon Model Predictive
+Control of Autonomous Trucks in Interactive Highway Traffic* (under review).
 
 An autonomous truck drives on a three-lane highway in SUMO. It is controlled by
 a model predictive controller (MPC) that only looks a few steps ahead, because
@@ -104,14 +103,4 @@ python tests/test_learning.py         # short training run, needs SUMO
 
 ## Authors
 
-Hooman Hamze and Benjamin Houshmand (joint thesis), supervised by Deepthi
-Pathare and Erik Börve (Volvo Group), with Morteza Haghir Chehreghani and
-Nikolce Murgovski (Chalmers).
-
-## Citation
-
-```
-H. Hamze, B. Houshmand, D. Pathare, E. Börve, M. Haghir Chehreghani, N. Murgovski.
-Learned Terminal Costs for Short-Horizon Model Predictive Control of Autonomous
-Trucks in Interactive Highway Traffic. Under review, 2026.
-```
+Withheld for double-blind review.
