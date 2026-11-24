@@ -1,12 +1,14 @@
-numpy
-numba
-torch
-gymnasium
-stable-baselines3
-eclipse-sumo
-traci
-sumolib
-pandas
-matplotlib
+# Versions the release was tested with (Python 3.13, Linux). Newer versions
+# usually work, but SUMO in particular can change the traffic slightly.
+numpy==2.5.5
+numba==0.68.1
+torch==2.15.0
+gymnasium==1.4.0
+stable-baselines3==2.9.2
+eclipse-sumo==1.28.0
+traci==1.28.0
+sumolib==1.28.0
+pandas==3.1.1
+matplotlib==3.11.2
 # optional, only used for logging during training
-wandb
+# wandb

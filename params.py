@@ -59,7 +59,7 @@ SIM_PARAMS = {
     "edge_end_margin_m":   600.0,
     "place_clearance_m":    10.0,
 
-    "randomize_ego_start": True,
+    "randomize_ego_start": True,   # training only; run_controller.py always evaluates from the fixed start
     "ego_start_margin_m":  1000.0,
 
     "collision_action":    "warn",

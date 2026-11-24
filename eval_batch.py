@@ -4,21 +4,26 @@ Evaluate a controller over many seeds and write the results to CSV.
 Calls run() from run_controller.py in the same process, so the JIT warmup
 and the DQN loading only happen once.
 
-Examples:
-    # MPC without terminal cost, H=1, 500 seeds
-    python eval_batch.py --terminal_cost zero --horizon 1 --seeds 20000-20499
+Measurement noise is seeded with the episode seed, so results are
+reproducible.
 
-    # MPC + learned terminal cost
-    python eval_batch.py --terminal_cost rl --horizon 5 \
-        --checkpoint models/model_t16600000.zip --seeds 20000-20499
+Examples (stochastic setting):
+    # MPC without terminal cost, H=5
+    python eval_batch.py --terminal_cost zero --horizon 5 --seeds 20000-20099
+
+    # MPC + learned terminal cost, H=3
+    python eval_batch.py --terminal_cost rl --horizon 3 \
+        --checkpoint models/model_t16100000.zip --seeds 20000-20099
 
     # DQN only
     python eval_batch.py --terminal_cost rl_only \
-        --checkpoint models/model_t16600000.zip --seeds 20000-20499
+        --checkpoint models/model_t16100000.zip --seeds 20000-20099
 
     # MPC + rollout terminal cost
-    python eval_batch.py --terminal_cost rollout --horizon 5 \
-        --rollout_horizon 40 --seeds 20000-20499
+    python eval_batch.py --terminal_cost rollout --horizon 3 \
+        --rollout_horizon 20 --seeds 20000-20099
+
+Add --setting deterministic to run without noise and margins.
 """
 
 from __future__ import annotations
@@ -56,7 +61,9 @@ def main():
     parser.add_argument("--rollout_horizon",  type=int,   default=40)
     parser.add_argument("--checkpoint",       type=str,   default="")
     parser.add_argument("--rl_weight",        type=float, default=1.0)
-    parser.add_argument("--seeds",            type=str,   default="20000-20499")
+    parser.add_argument("--setting",          type=str,   default="stochastic",
+                        choices=["stochastic", "deterministic"])
+    parser.add_argument("--seeds",            type=str,   default="20000-20099")
     parser.add_argument("--max_steps",        type=int,   default=1500)
     parser.add_argument("--density",          type=float, default=None)
     parser.add_argument("--warmup",           type=float, default=2.0)
@@ -67,7 +74,7 @@ def main():
     args = parser.parse_args()
 
     seeds = parse_seeds(args.seeds)
-    print(f"\n=== BATCH EVAL: {args.terminal_cost.upper()}  H={args.horizon}  "
+    print(f"\n=== BATCH EVAL: {args.terminal_cost.upper()}  H={args.horizon}  {args.setting}  "
           f"{len(seeds)} seeds ({seeds[0]}..{seeds[-1]}) ===\n", flush=True)
 
     from run_controller import run as run_episode, warmup_rollout
@@ -103,6 +110,7 @@ def main():
             rollout_horizon  = args.rollout_horizon,
             checkpoint       = args.checkpoint,
             rl_weight        = args.rl_weight,
+            setting          = args.setting,
             seed             = seed,
             steps            = args.max_steps,
             density          = args.density if args.density else 30.0,
@@ -111,6 +119,7 @@ def main():
             verbose          = False,
         )
 
+        np.random.seed(int(seed))  # same measurement-noise draws for this seed on every run
         try:
             result = run_episode(ep_args, pred_logger=pred_logger)
         except Exception as e:

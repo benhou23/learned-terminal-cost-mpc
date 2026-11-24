@@ -1,8 +1,8 @@
 """
 Evaluate a saved DQN checkpoint locally, the same way as during training.
 
-    python eval_checkpoint.py --checkpoint models/model_t16600000.zip
-    python eval_checkpoint.py --checkpoint models/model_t16600000.zip --seeds 20000-20009
+    python eval_checkpoint.py --checkpoint models/model_t16100000.zip
+    python eval_checkpoint.py --checkpoint models/model_t16100000.zip --seeds 20000-20009
 """
 
 import argparse
