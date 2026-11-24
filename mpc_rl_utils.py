@@ -38,22 +38,33 @@ LC_TOTAL = 10
 LC_START = 15
 
 # Std of the position/speed prediction error per neighbour slot and step,
-# measured with pred_error_logger.py. They are passed into the DP for an
-# optional chance-constrained margin (s +- 2.33 sigma), but that margin is
-# turned off in the version used for the paper.
-all_traj_s_stds = np.array([[0.5, 0.509, 0.538, 0.585, 0.645, 0.719],  # front
-                            [0.5, 0.511, 0.539, 0.584, 0.646, 0.719],  # front_left
-                            [0.5, 0.512, 0.540, 0.582, 0.646, 0.722],  # front_right
-                            [0.5, 0.510, 0.540, 0.586, 0.649, 0.722],  # back_left
-                            [0.5, 0.510, 0.542, 0.584, 0.644, 0.717],  # back_right
-                            ],dtype=np.float64)
+# measured with pred_error_logger.py (columns 0-5). Columns 6-10, needed for
+# horizons up to N = 10, are extended with the variance-growth formula from
+# the paper, scaled to match column 5. In the stochastic setting the DP
+# tightens every gap by Z_MARGIN standard deviations (chance constraint at
+# 99% confidence); in the deterministic setting the margin is zero.
+all_traj_s_stds = np.array([
+    [0.500, 0.509, 0.538, 0.585, 0.645, 0.719, 0.798, 0.886, 0.980, 1.080, 1.187],  # front
+    [0.500, 0.511, 0.539, 0.584, 0.646, 0.719, 0.798, 0.886, 0.980, 1.080, 1.187],  # front_left
+    [0.500, 0.512, 0.540, 0.582, 0.646, 0.722, 0.802, 0.889, 0.984, 1.085, 1.192],  # front_right
+    [0.500, 0.510, 0.540, 0.586, 0.649, 0.722, 0.802, 0.889, 0.984, 1.085, 1.192],  # back_left
+    [0.500, 0.510, 0.542, 0.584, 0.644, 0.717, 0.796, 0.883, 0.977, 1.077, 1.183],  # back_right
+    ], dtype=np.float64)
 all_traj_v_stds = np.array([
-         [0.5, 0.500, 0.515, 0.524, 0.546, 0.570],  # front
-         [0.5, 0.503, 0.513, 0.527, 0.553, 0.583],  # front_left
-         [0.5, 0.505, 0.511, 0.524, 0.543, 0.572],  # front_right
-         [0.5, 0.500, 0.514, 0.535, 0.560, 0.599],  # back_left
-         [0.5, 0.499, 0.513, 0.529, 0.556, 0.578],  # back_right
-         ],dtype=np.float64)
+    [0.500, 0.500, 0.515, 0.524, 0.546, 0.570, 0.587, 0.607, 0.628, 0.652, 0.678],  # front
+    [0.500, 0.503, 0.513, 0.527, 0.553, 0.583, 0.600, 0.620, 0.643, 0.667, 0.693],  # front_left
+    [0.500, 0.505, 0.511, 0.524, 0.543, 0.572, 0.589, 0.609, 0.631, 0.654, 0.680],  # front_right
+    [0.500, 0.500, 0.514, 0.535, 0.560, 0.599, 0.617, 0.637, 0.660, 0.685, 0.712],  # back_left
+    [0.500, 0.499, 0.513, 0.529, 0.556, 0.578, 0.595, 0.615, 0.637, 0.661, 0.687],  # back_right
+    ], dtype=np.float64)
+
+# Stochastic setting (main results of the paper): Gaussian measurement noise
+# on the other vehicles' position, speed and acceleration, and gaps tightened
+# by Z_MARGIN standard deviations. MAX_HORIZON is the longest horizon the
+# std tables above cover.
+MEAS_NOISE_STD = (0.5, 0.5, 0.2)   # position [m], speed [m/s], acceleration [m/s^2]
+Z_MARGIN = 2.33                    # one-sided 99% Gaussian quantile
+MAX_HORIZON = all_traj_s_stds.shape[1] - 1
 
 
 @njit(parallel=True)
@@ -64,7 +75,8 @@ def backward_dp_numba(
     a_min=-2.0, a_max=2.0, v_min=0.0, v_max=33.33, V_STEP=0.2, S_STEP=0.2,
     D0=5.0, T_HEAD=2.0, W_FRONT=1000.0, W_BACK=1000.0, W_SPEED=1.0, W_ACCEL=1.0,
     LANE_CHANGE_PENALTY=10.0, LANE_CHANGING_START=15, LEFT_LANE_PENALTY=2.0,
-    COOLDOWN_PENALTY=30.0, EGO_LENGTH=12.0, COLLISION_PENALTY=1e8
+    COOLDOWN_PENALTY=30.0, EGO_LENGTH=12.0, COLLISION_PENALTY=1e8,
+    z_margin=0.0
 ):
     """
     Backward dynamic programming over the grid (s, lane, v, cooldown).
@@ -73,6 +85,10 @@ def backward_dp_numba(
     each cell gets the best stage cost + cost-to-go over all accelerations
     and lane moves, using the predicted trajectories of the other vehicles
     at step h. Only cells the ego can actually reach are filled.
+
+    z_margin > 0 tightens every gap (and raises the speed of the vehicle
+    behind) by z_margin prediction-error standard deviations, which is the
+    chance-constrained version used in the stochastic setting.
     """
     n_s    = len(s_vals)
     n_v    = len(v_vals)
@@ -183,6 +199,17 @@ def backward_dp_numba(
                                 d_safe_front = D0 + T_HEAD * v
                                 safety    = 0.0
                                 collision = 0.0
+                                # chance-constraint margin (zero in the deterministic setting)
+                                if dl == 1:     # left: front-left and back-left slots
+                                    min_front_gap = min_front_gap - z_margin * traj_s_stds[1, h]
+                                    min_back_gap  = min_back_gap  - z_margin * traj_s_stds[3, h]
+                                    v_back        = v_back        + z_margin * traj_v_stds[3, h]
+                                elif dl == -1:  # right: front-right and back-right slots
+                                    min_front_gap = min_front_gap - z_margin * traj_s_stds[2, h]
+                                    min_back_gap  = min_back_gap  - z_margin * traj_s_stds[4, h]
+                                    v_back        = v_back        + z_margin * traj_v_stds[4, h]
+                                else:           # keep lane: front slot
+                                    min_front_gap = min_front_gap - z_margin * traj_s_stds[0, h]
                                 if min_front_gap <= 0.0:
                                     collision += COLLISION_PENALTY
                                 if min_front_gap < d_safe_front:
@@ -368,13 +395,19 @@ def sumo_policy(s, v, l, a_max, a_min, v_max, v_ref, s_map, v_map, len_map, dt):
     return s_next, v_next, l     # lane unchanged
 
 
-def build_lane_trajs(ego_id: str, H: int, dt_step: float, lanes: list) -> dict:
+def build_lane_trajs(ego_id: str, H: int, dt_step: float, lanes: list,
+                     noise: bool = False) -> dict:
     """
     Predict the next H steps of the vehicles around the ego with sumo_policy.
 
     A vehicle that is in the middle of a lane change is counted in both
     lanes: we add a "ghost" copy of it in the target lane, so the ego
     keeps its distance in both until the manoeuvre is done.
+
+    With noise=True (stochastic setting) the measured position, speed and
+    acceleration of every vehicle get Gaussian noise with std MEAS_NOISE_STD
+    before the prediction. The noise uses NumPy's global generator, so
+    seeding it per episode (eval_batch.py does) makes runs reproducible.
 
     Returns a dict {vid: (traj_s, traj_v, traj_l, length, a_min, v_max, a_max)}.
     """
@@ -409,6 +442,10 @@ def build_lane_trajs(ego_id: str, H: int, dt_step: float, lanes: list) -> dict:
             s_noisy = float(data[tc.VAR_POSITION][0])
             v_noisy = float(data[tc.VAR_SPEED])
             a_noisy = float(data[tc.VAR_ACCELERATION])
+            if noise:
+                s_noisy += np.random.normal(0, MEAS_NOISE_STD[0])
+                v_noisy += np.random.normal(0, MEAS_NOISE_STD[1])
+                a_noisy += np.random.normal(0, MEAS_NOISE_STD[2])
             vehicles.append({
                 "id": vid,
                 "s": s_noisy,

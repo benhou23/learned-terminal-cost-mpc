@@ -8,3 +8,5 @@ results_*.csv
 pred_errors*.csv
 *.png
 .ipynb_checkpoints/
+results/
+logs/

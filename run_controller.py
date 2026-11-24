@@ -13,13 +13,13 @@ Examples:
 
     # MPC + learned terminal cost
     python run_controller.py --terminal_cost rl --horizon 5 \
-        --checkpoint models/model_t16600000.zip
+        --checkpoint models/model_t16100000.zip
 
     # MPC + rollout terminal cost
     python run_controller.py --terminal_cost rollout --horizon 5 --rollout_horizon 40
 
     # DQN only
-    python run_controller.py --terminal_cost rl_only --checkpoint models/model_t16600000.zip
+    python run_controller.py --terminal_cost rl_only --checkpoint models/model_t16100000.zip
 
     # other options
         --seed 10000      # random seed
@@ -56,7 +56,8 @@ from mpc_rl_utils import (
     LANE_CHANGE_PENALTY, COOLDOWN_PENALTY, LEFT_LANE_PENALTY,
     SENSOR_DIS, LANE_CHANGE_COOLDOWN, LANE_CHANGING_START,
     LANE_CHANGE_TIME, LC_START, accel_vals, v_vals, V_STEP, S_STEP,
-    EGO_LENGTH, COLLISION_PENALTY, SUMO_MIN_GAP, a_break, all_traj_s_stds, all_traj_v_stds
+    EGO_LENGTH, COLLISION_PENALTY, SUMO_MIN_GAP, a_break, all_traj_s_stds, all_traj_v_stds,
+    Z_MARGIN, MAX_HORIZON,
 )
 
 
@@ -73,6 +74,10 @@ def parse_args():
                    help="DQN checkpoint path (required for rl and rl_only)")
     p.add_argument("--rl_weight",       type=float, default=1.0,
                    help="Not used right now; the terminal cost is scaled by 0.98**H")
+    p.add_argument("--setting",         type=str,   default="stochastic",
+                   choices=["stochastic", "deterministic"],
+                   help="stochastic (paper's main results): noisy measurements and "
+                        "chance-constrained margins; deterministic: neither (paper's appendix)")
     p.add_argument("--seed",            type=int,   default=42)
     p.add_argument("--steps",           type=int,   default=1500)
     p.add_argument("--density",         type=float,
@@ -100,6 +105,13 @@ def run(args=None, pred_logger=None):
 
     tc_label = args.terminal_cost
     H        = args.horizon
+    setting    = getattr(args, "setting", "stochastic")
+    stochastic = setting == "stochastic"
+    z_margin   = Z_MARGIN if stochastic else 0.0
+
+    if tc_label != "rl_only" and H > MAX_HORIZON:
+        print(f"ERROR: --horizon must be at most {MAX_HORIZON} (size of the std tables)")
+        sys.exit(1)
 
     if tc_label in ("rl", "rl_only") and not args.checkpoint:
         print(f"ERROR: --checkpoint required for --terminal_cost {tc_label}")
@@ -115,6 +127,7 @@ def run(args=None, pred_logger=None):
         print(f"  Checkpoint:    {args.checkpoint}")
     if tc_label == "rl":
         print(f"  RL weight:     {args.rl_weight}")
+    print(f"  Setting:       {setting}")
     print(f"  Seed={args.seed}  Steps={args.steps}  Density={args.density}")
     print(f"  GUI={args.gui}")
     print(f"{'='*60}\n")
@@ -134,6 +147,7 @@ def run(args=None, pred_logger=None):
     sp["warmup_s"]         = args.warmup
     sp["traffic_settle_s"] = 1.0
     sp["terminate_on_cost"] = False
+    sp["randomize_ego_start"] = False   # evaluation always starts from the fixed position (as in the paper)
 
     rp = copy.deepcopy(ROAD_PARAMS)
     # separate scenario folder per checkpoint, so several runs can go in parallel
@@ -165,12 +179,13 @@ def run(args=None, pred_logger=None):
     collisions   = 0
     steps_done   = 0
     last_reason  = ""
-    csv_path = "data.csv"
+    # per-step log; set STEP_LOG to give parallel runs their own file
+    csv_path = os.environ.get("STEP_LOG", "data.csv")
     with open(csv_path, "a", newline="") as f:
         writer = csv.writer(f)
         if f.tell() == 0:
             writer.writerow([
-                "scenario", "t",
+                "scenario", "t", "true_gap_front",
                 "s", "v", "lane",
                 "a", "dl",
                 "gap_front",
@@ -253,7 +268,7 @@ def run(args=None, pred_logger=None):
             # compare predictions from H steps ago with what actually happened
             if pred_logger is not None:
                 pred_logger.flush_actuals(args.seed, step, ego_id)
-            final_trajs = build_lane_trajs(ego_id, traj_H, dt, lanes)
+            final_trajs = build_lane_trajs(ego_id, traj_H, dt, lanes, noise=stochastic)
             t_traj_list.append(_time.perf_counter() - _t0_traj)
             if pred_logger is not None:
                 pred_logger.record_prediction(
@@ -329,6 +344,7 @@ def run(args=None, pred_logger=None):
                 D0, T_HEAD, W_FRONT, W_BACK, W_SPEED, W_ACCEL,
                 LANE_CHANGE_PENALTY, LANE_CHANGING_START, LEFT_LANE_PENALTY,
                 COOLDOWN_PENALTY, COLLISION_PENALTY,
+                z_margin=z_margin,
             )
             t_dp_list.append(_time.perf_counter() - _t0_dp)
 
@@ -371,6 +387,20 @@ def run(args=None, pred_logger=None):
                     gF, _  = nearest_leader(final_trajs, l_next, s_ego)
                     gB, vB = nearest_follower(final_trajs, l_next, s_ego, len_ego)
 
+                    # same chance-constraint margin as in the DP, at step 0
+                    if dl == 1:
+                        gF = gF - z_margin * all_traj_s_stds[1, 0]
+                        gB = gB - z_margin * all_traj_s_stds[3, 0]
+                        if vB is not None:
+                            vB = vB + z_margin * all_traj_v_stds[3, 0]
+                    elif dl == -1:
+                        gF = gF - z_margin * all_traj_s_stds[2, 0]
+                        gB = gB - z_margin * all_traj_s_stds[4, 0]
+                        if vB is not None:
+                            vB = vB + z_margin * all_traj_v_stds[4, 0]
+                    else:
+                        gF = gF - z_margin * all_traj_s_stds[0, 0]
+
                     col_f = COLLISION_PENALTY if gF <= 0.0 else 0.0
                     d_sf  = D0 + T_HEAD * v_ego
                     sf    = W_FRONT * (d_sf - gF)**2 if gF < d_sf else 0.0
@@ -404,9 +434,13 @@ def run(args=None, pred_logger=None):
             traci.vehicle.setAcceleration(ego_id, best_a, 1.0)
             c_ego     = best_c_next
             l_ego_reg = best_lane
+            # true bumper-to-bumper gap to the leader, from SUMO (no noise)
+            _ldr = traci.vehicle.getLeader(ego_id, 1000.0)
+            _true_gap = (float(_ldr[1]) + traci.vehicle.getMinGap(ego_id)) if _ldr else float("inf")
             writer.writerow([
                     args.seed,
                     step,
+                    _true_gap,
                     s_ego,
                     v_ego,
                     l_ego,
