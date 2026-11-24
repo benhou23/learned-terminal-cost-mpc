@@ -343,7 +343,7 @@ def run(args=None, pred_logger=None):
                 a_min, a_max, v_min, v_max, V_STEP, S_STEP,
                 D0, T_HEAD, W_FRONT, W_BACK, W_SPEED, W_ACCEL,
                 LANE_CHANGE_PENALTY, LANE_CHANGING_START, LEFT_LANE_PENALTY,
-                COOLDOWN_PENALTY, COLLISION_PENALTY,
+                COOLDOWN_PENALTY, EGO_LENGTH, COLLISION_PENALTY,
                 z_margin=z_margin,
             )
             t_dp_list.append(_time.perf_counter() - _t0_dp)
