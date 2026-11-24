@@ -4,10 +4,10 @@ Evaluate a controller over many seeds and write the results to CSV.
 Calls run() from run_controller.py in the same process, so the JIT warmup
 and the DQN loading only happen once.
 
-The measurement noise of the stochastic setting is seeded with the episode
-seed, so every run of the same command gives the same numbers.
+Measurement noise is seeded with the episode seed, so results are
+reproducible.
 
-Examples (stochastic setting, the paper's main table):
+Examples (stochastic setting):
     # MPC without terminal cost, H=5
     python eval_batch.py --terminal_cost zero --horizon 5 --seeds 20000-20099
 
@@ -21,9 +21,9 @@ Examples (stochastic setting, the paper's main table):
 
     # MPC + rollout terminal cost
     python eval_batch.py --terminal_cost rollout --horizon 3 \
-        --rollout_horizon 40 --seeds 20000-20099
+        --rollout_horizon 20 --seeds 20000-20099
 
-Add --setting deterministic for the setting without noise (paper appendix).
+Add --setting deterministic to run without noise and margins.
 """
 
 from __future__ import annotations

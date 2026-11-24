@@ -32,15 +32,15 @@ five-step MPC.
 The DQN is trained with reward = -(MPC stage cost), so its Q-values are a
 cost-to-go in the units of the MPC.
 
-## Two settings
+## Settings
 
 | `--setting`               | What it means                                              | In the paper |
 |---------------------------|------------------------------------------------------------|--------------|
 | `stochastic` (default)    | Gaussian noise on the other vehicles' measured position, speed and acceleration (std 0.5 m, 0.5 m/s, 0.2 m/s²); every gap is tightened by 2.33 prediction-error standard deviations (chance constraint at 99%) | main results |
 | `deterministic`           | exact measurements, no margin                              | appendix     |
 
-The measurement noise is seeded with the episode seed, so the same command
-always gives the same numbers.
+Measurement noise is seeded with the episode seed, so results are
+reproducible.
 
 ## How it works
 

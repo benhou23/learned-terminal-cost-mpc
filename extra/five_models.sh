@@ -1,7 +1,6 @@
 #!/bin/bash
-# Robustness check from the review period: MPC + learned terminal cost with
-# H = 3 in the stochastic setting, for all five DQN training runs
-# (the paper's model plus models/other_runs/). Runs the five in parallel.
+# MPC + learned terminal cost (H = 3, stochastic) for all five DQN training
+# runs: the paper's model and models/other_runs/. The five run in parallel.
 #   bash extra/five_models.sh
 set -e
 cd "$(dirname "$0")/.."

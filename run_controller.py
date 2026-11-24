@@ -147,7 +147,7 @@ def run(args=None, pred_logger=None):
     sp["warmup_s"]         = args.warmup
     sp["traffic_settle_s"] = 1.0
     sp["terminate_on_cost"] = False
-    sp["randomize_ego_start"] = False   # evaluation always starts from the fixed position (as in the paper)
+    sp["randomize_ego_start"] = False   # evaluation always uses the fixed start position
 
     rp = copy.deepcopy(ROAD_PARAMS)
     # separate scenario folder per checkpoint, so several runs can go in parallel
@@ -348,7 +348,7 @@ def run(args=None, pred_logger=None):
             )
             t_dp_list.append(_time.perf_counter() - _t0_dp)
 
-            # Forward step
+            # forward step: pick the first action using J[1]
             _t0_fwd = _time.perf_counter()
             if c_ego < LANE_CHANGING_START - 1:
                 l_ego_reg = l_ego

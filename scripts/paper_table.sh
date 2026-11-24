@@ -8,8 +8,8 @@
 # for horizons 1-5, plus the DQN on its own, on the 100 evaluation seeds
 # 20000-20099. Results go to results/<setting>/; summarise them with
 #   python scripts/summarize.py results/<setting>
-# Expect several hours on a laptop; the runs are independent, so they can be
-# split across machines.
+# Takes several hours on a laptop; the runs are independent and can be split
+# across machines.
 set -e
 cd "$(dirname "$0")/.."
 SETTING="${1:-stochastic}"

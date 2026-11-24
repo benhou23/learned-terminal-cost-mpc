@@ -37,12 +37,9 @@ CD_TOTAL = 25
 LC_TOTAL = 10
 LC_START = 15
 
-# Std of the position/speed prediction error per neighbour slot and step,
-# measured with pred_error_logger.py (columns 0-5). Columns 6-10, needed for
-# horizons up to N = 10, are extended with the variance-growth formula from
-# the paper, scaled to match column 5. In the stochastic setting the DP
-# tightens every gap by Z_MARGIN standard deviations (chance constraint at
-# 99% confidence); in the deterministic setting the margin is zero.
+# Prediction-error std per neighbour slot (rows) and prediction step (columns).
+# Steps 0-5 were measured with pred_error_logger.py; steps 6-10 extrapolate
+# them with the variance-growth model from the paper, matched at step 5.
 all_traj_s_stds = np.array([
     [0.500, 0.509, 0.538, 0.585, 0.645, 0.719, 0.798, 0.886, 0.980, 1.080, 1.187],  # front
     [0.500, 0.511, 0.539, 0.584, 0.646, 0.719, 0.798, 0.886, 0.980, 1.080, 1.187],  # front_left
@@ -58,13 +55,11 @@ all_traj_v_stds = np.array([
     [0.500, 0.499, 0.513, 0.529, 0.556, 0.578, 0.595, 0.615, 0.637, 0.661, 0.687],  # back_right
     ], dtype=np.float64)
 
-# Stochastic setting (main results of the paper): Gaussian measurement noise
-# on the other vehicles' position, speed and acceleration, and gaps tightened
-# by Z_MARGIN standard deviations. MAX_HORIZON is the longest horizon the
-# std tables above cover.
+# Stochastic setting: Gaussian noise on the measured state of the other
+# vehicles, and a chance-constrained margin of Z_MARGIN std on every gap.
 MEAS_NOISE_STD = (0.5, 0.5, 0.2)   # position [m], speed [m/s], acceleration [m/s^2]
 Z_MARGIN = 2.33                    # one-sided 99% Gaussian quantile
-MAX_HORIZON = all_traj_s_stds.shape[1] - 1
+MAX_HORIZON = all_traj_s_stds.shape[1] - 1  # longest horizon the std tables cover
 
 
 @njit(parallel=True)
@@ -86,9 +81,9 @@ def backward_dp_numba(
     and lane moves, using the predicted trajectories of the other vehicles
     at step h. Only cells the ego can actually reach are filled.
 
-    z_margin > 0 tightens every gap (and raises the speed of the vehicle
-    behind) by z_margin prediction-error standard deviations, which is the
-    chance-constrained version used in the stochastic setting.
+    z_margin shrinks every gap, and raises the speed of the vehicle behind,
+    by z_margin prediction-error standard deviations: the chance constraint
+    of the stochastic setting. z_margin = 0 disables it.
     """
     n_s    = len(s_vals)
     n_v    = len(v_vals)
@@ -199,7 +194,7 @@ def backward_dp_numba(
                                 d_safe_front = D0 + T_HEAD * v
                                 safety    = 0.0
                                 collision = 0.0
-                                # chance-constraint margin (zero in the deterministic setting)
+                                # chance-constrained margin; z_margin = 0 in the deterministic setting
                                 if dl == 1:     # left: front-left and back-left slots
                                     min_front_gap = min_front_gap - z_margin * traj_s_stds[1, h]
                                     min_back_gap  = min_back_gap  - z_margin * traj_s_stds[3, h]
@@ -241,9 +236,6 @@ def backward_dp_numba(
 # Same scale as in highway_env (reward = -cost * REWARD_SCALE). Q-values are
 # divided by this to bring them back to the units of the MPC stage cost.
 REWARD_SCALE = 1e-5
-
-#                next_c.add(c - 1)
-#                next_c.add(LANE_CHANGE_COOLDOWN - 1)
 
 
 def fill_terminal_rl(J_H, s_vals, lanes, dqn_model, final_trajs, H, s_ego, v_ego,
@@ -404,10 +396,9 @@ def build_lane_trajs(ego_id: str, H: int, dt_step: float, lanes: list,
     lanes: we add a "ghost" copy of it in the target lane, so the ego
     keeps its distance in both until the manoeuvre is done.
 
-    With noise=True (stochastic setting) the measured position, speed and
-    acceleration of every vehicle get Gaussian noise with std MEAS_NOISE_STD
-    before the prediction. The noise uses NumPy's global generator, so
-    seeding it per episode (eval_batch.py does) makes runs reproducible.
+    noise=True adds Gaussian noise (MEAS_NOISE_STD) to the measured position,
+    speed and acceleration of every vehicle before the prediction. It draws
+    from NumPy's global generator, which eval_batch.py seeds per episode.
 
     Returns a dict {vid: (traj_s, traj_v, traj_l, length, a_min, v_max, a_max)}.
     """
@@ -438,7 +429,6 @@ def build_lane_trajs(ego_id: str, H: int, dt_step: float, lanes: list,
             else:
                 target_lane = l
 
-            # keep the target lane inside the road
             s_noisy = float(data[tc.VAR_POSITION][0])
             v_noisy = float(data[tc.VAR_SPEED])
             a_noisy = float(data[tc.VAR_ACCELERATION])
